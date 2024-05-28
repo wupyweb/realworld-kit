@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"github.com/wupyweb/realworld-kit/ent"
 	"github.com/wupyweb/realworld-kit/internal/utils"
 )
 
@@ -37,7 +36,7 @@ func (m *ConduitService) Authentication(c *gin.Context) {
 	}
 
 	// 生成token
-	token, err := utils.GenerateToken(user.ID)
+	token, err := utils.GenerateToken(user.ID, user.Username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -73,7 +72,7 @@ func (m *ConduitService) Registration(c *gin.Context) {
 	}
 
 	// 生成token
-	token, err := utils.GenerateToken(user.ID)
+	token, err := utils.GenerateToken(user.ID, user.Username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -92,13 +91,17 @@ func (m *ConduitService) Registration(c *gin.Context) {
 // 获取当前登录用户
 func (m *ConduitService) GetCurrentUser(c *gin.Context) {
 
-	// 从上下文拿到鉴权用户
-	user, ok := c.Get("user")
+	// 从上下文拿到鉴权用户id
+	userid, ok := c.Get("user_id")
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
-	u := user.(*ent.User)
+	u, err := m.store.GetUserByID(userid.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
 	res := map[string]UserBase{
 		"user": {
@@ -140,21 +143,17 @@ func (m *ConduitService) UpdateCurrentUser(c *gin.Context) {
 // GET /api/profiles/:username
 // 获取用户profile
 func (m *ConduitService) GetProfile(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
+	// 从上下文中取出鉴权后的当前用户id
+	userid, _ := c.Get("user_id")
+	// 要获取的用户profile
 	username := c.Param("username")
-	user, err := m.store.GetUserByName(username)
+	user, err := m.store.GetProfile(username)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	res := ProfileResponse{}
-	res.Profile.Username = user.Username
-	res.Profile.Bio = user.Bio
-	res.Profile.Image = user.Image
-	res.Profile.Following, _ = m.store.IsFollowing(userID.(int), user.ID)
-
+	res := toProfile(user, userid.(int))
 	c.JSON(http.StatusOK, res)
 }
 
@@ -162,26 +161,16 @@ func (m *ConduitService) GetProfile(c *gin.Context) {
 // 关注用户
 func (m *ConduitService) FollowUser(c *gin.Context) {
 	followerID, _ := c.Get("user_id")
-
 	username := c.Param("username")
-	followee, err := m.store.GetUserByName(username)
+
+	// TODO 先判断是否已关注
+	user, err := m.store.FollowUser(username, followerID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	follower, err := m.store.Follow(followerID.(int), followee.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	res := ProfileResponse{}
-	res.Profile.Username = follower.Username
-	res.Profile.Bio = follower.Bio
-	res.Profile.Image = follower.Image
-	res.Profile.Following, _ = m.store.IsFollowing(follower.ID, followee.ID)
-
+	res := toProfile(user, followerID.(int))
 	c.JSON(http.StatusOK, res)
 }
 
@@ -191,24 +180,13 @@ func (m *ConduitService) UnFollowUser(c *gin.Context) {
 	followerID, _ := c.Get("user_id")
 
 	username := c.Param("username")
-	followee, err := m.store.GetUserByName(username)
+	user, err := m.store.UnFollowUser(username, followerID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	follower, err := m.store.Unfollow(followerID.(int), followee.ID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	res := ProfileResponse{}
-	res.Profile.Username = follower.Username
-	res.Profile.Bio = follower.Bio
-	res.Profile.Image = follower.Image
-	res.Profile.Following, _ = m.store.IsFollowing(follower.ID, followee.ID)
-
+	res := toProfile(user, followerID.(int))
 	c.JSON(http.StatusOK, res)
 }
 
@@ -227,7 +205,7 @@ func (m *ConduitService) UnFollowUser(c *gin.Context) {
 // ?offset=0
 func (m *ConduitService) ListArticles(c *gin.Context) {
 	var query ArticleQuery
-	//current_user_id, _ := c.Get("user_id")
+	current_user_id, _ := c.Get("user_id")
 
 	if err := c.BindQuery(&query); err != nil {
 		log.Print(1, query, err)
@@ -249,7 +227,7 @@ func (m *ConduitService) ListArticles(c *gin.Context) {
 	}
 	var articleList []ArticleBase
 	for _, article := range articles {
-		articleList = append(articleList, toArticle(article))
+		articleList = append(articleList, toArticle(article, current_user_id.(int)))
 	}
 
 	res := MultipleArticles{
@@ -285,7 +263,7 @@ func (m *ConduitService) FeedArticles(c *gin.Context) {
 
 	var articleList []ArticleBase
 	for _, article := range articles {
-		articleList = append(articleList, toArticle(article))
+		articleList = append(articleList, toArticle(article, current_user_id.(int)))
 	}
 
 	res := MultipleArticles{
@@ -298,6 +276,7 @@ func (m *ConduitService) FeedArticles(c *gin.Context) {
 // GET /api/articles/:slug
 // 获取文章详情，无需鉴权
 func (m *ConduitService) GetArticle(c *gin.Context) {
+	current_user_id, _ := c.Get("user_id")
 
 	slug := c.Param("slug")
 	article, err := m.store.GetArticleBySlug(slug)
@@ -307,7 +286,7 @@ func (m *ConduitService) GetArticle(c *gin.Context) {
 	}
 
 	res := SingleArticle{
-		Article: toArticle(article),
+		Article: toArticle(article, current_user_id.(int)),
 	}
 	c.JSON(http.StatusOK, res)
 }
@@ -333,7 +312,7 @@ func (m *ConduitService) CreateArticle(c *gin.Context) {
 
 	a, _ := m.store.GetArticleBySlug(article.Slug)
 	res := SingleArticle{
-		Article: toArticle(a),
+		Article: toArticle(a, current_user_id.(int)),
 	}
 
 	c.JSON(http.StatusOK, res)
@@ -361,7 +340,7 @@ func (m *ConduitService) UpdateArticle(c *gin.Context) {
 
 	a, _ := m.store.GetArticleBySlug(article.Slug)
 	res := SingleArticle{
-		Article: toArticle(a),
+		Article: toArticle(a, current_user_id.(int)),
 	}
 
 	c.JSON(http.StatusOK, res)
@@ -400,7 +379,7 @@ func (m *ConduitService) AddComment(c *gin.Context) {
 	}
 
 	res := SingleComment{
-		Comment: toComment(comment),
+		Comment: toComment(comment, current_user_id.(int)),
 	}
 	c.JSON(http.StatusOK, res)
 }
@@ -408,6 +387,7 @@ func (m *ConduitService) AddComment(c *gin.Context) {
 // GET /api/articles/:slug/comments
 // 获取文章所有评论，鉴权可选
 func (m *ConduitService) GetComments(c *gin.Context) {
+	current_user_id, _ := c.Get("user_id")
 	slug := c.Param("slug")
 	comments, err := m.store.GetComments(slug)
 	if err != nil {
@@ -417,7 +397,7 @@ func (m *ConduitService) GetComments(c *gin.Context) {
 
 	var commentList []CommentBase
 	for _, comment := range comments {
-		commentList = append(commentList, toComment(comment))
+		commentList = append(commentList, toComment(comment, current_user_id.(int)))
 	}
 	res := MultipleComments{
 		Comments: commentList,
@@ -460,7 +440,7 @@ func (m *ConduitService) FavoriteArticle(c *gin.Context) {
 		return
 	}
 	res := SingleArticle{
-		Article: toArticle(article),
+		Article: toArticle(article, current_user_id.(int)),
 	}
 
 	c.JSON(http.StatusOK, res)
@@ -479,7 +459,7 @@ func (m *ConduitService) UnfavoriteArticle(c *gin.Context) {
 	}
 
 	res := SingleArticle{
-		Article: toArticle(article),
+		Article: toArticle(article, current_user_id.(int)),
 	}
 
 	c.JSON(http.StatusOK, res)
@@ -488,7 +468,7 @@ func (m *ConduitService) UnfavoriteArticle(c *gin.Context) {
 // GET /api/tags
 // 无需鉴权
 func (m *ConduitService) GetTags(c *gin.Context) {
-    tags, _ := m.store.GetTags()
+	tags, _ := m.store.GetTags()
 
 	var tagList []string
 	for _, tag := range tags {

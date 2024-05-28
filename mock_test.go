@@ -7,7 +7,7 @@ import (
 
 	"github.com/wupyweb/realworld-kit/ent"
 	"github.com/wupyweb/realworld-kit/ent/article"
-	"github.com/wupyweb/realworld-kit/ent/tag"
+	//"github.com/wupyweb/realworld-kit/ent/tag"
 	"github.com/wupyweb/realworld-kit/ent/user"
 
 	//"github.com/wupyweb/realworld-kit/internal/apis/conduit"
@@ -41,12 +41,13 @@ func TestQueryArticles(t *testing.T) {
 	a, _ := client.Article.Query().
 		WithOwner().
 		WithTags().
-		Where(article.HasTagsWith(tag.Name("aut"))).
-		All(context.Background())
+		WithLikedUsers().
+		Where(article.IDEQ(5)).
+		Only(context.Background())
 
 	t.Log(a)
-	t.Log(a[0].Edges.Owner)
-	t.Log(a[0].Edges.Tags)
+	t.Log(a.Edges.Owner)
+	t.Log(a.Edges.Tags)
 }
 
 func TestDeleteArticle(t *testing.T) {

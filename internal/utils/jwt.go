@@ -10,20 +10,22 @@ type Payload struct {
 	jwt.RegisteredClaims
 	// 添加额外的字段
 	// 例如：用户ID
-	UserID int `json:"user_id"`
+	UserID   int    `json:"userid"`
+	UserName string `json:"username"`
 }
 
 // jwt算法密钥
 var tokenKey = []byte("your_secret_key")
 
 // 生成jwt token
-func GenerateToken(id int) (string, error) {
+func GenerateToken(id int, username string) (string, error) {
 	payload := Payload{
 		UserID: id,
+		UserName: username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour * 24 * 7)), // 设置token过期时间
-			IssuedAt:  jwt.NewNumericDate(time.Now()),                     // token签发时间
-			NotBefore: jwt.NewNumericDate(time.Now()),                     // 设置token开始生效时间
+			IssuedAt:  jwt.NewNumericDate(time.Now()),                         // token签发时间
+			NotBefore: jwt.NewNumericDate(time.Now()),                         // 设置token开始生效时间
 		},
 	}
 	// 设置签名算法

@@ -6,7 +6,7 @@ import (
 )
 
 func TestJWT(t *testing.T) {
-	token, _ := GenerateToken(9527)
+	token, _ := GenerateToken(9527, "123")
 	t.Log(token)
 	
 	time.Sleep(time.Second * 30)

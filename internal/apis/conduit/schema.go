@@ -118,14 +118,25 @@ type (
 	}
 )
 
-func toProfile(u *ent.User) Profile {
+/////////////////////////// api response 格式化 //////////////////////
+
+func toProfile(u *ent.User, current_user_id int) Profile {
+
+	var isFollowing bool
+	for _, u := range u.Edges.Followers {
+		if u.ID == current_user_id {
+			isFollowing = true
+			break
+		}
+	}
+
 	return Profile{
 		UserBase: UserBase{
 			Username: u.Username,
 			Bio:      u.Bio,
 			Image:    u.Image,
 		},
-		Following: false,
+		Following: isFollowing,
 	}
 }
 
@@ -137,7 +148,7 @@ func toTagList(tags []*ent.Tag) []string {
 	return tagList
 }
 
-func toArticle(a *ent.Article) ArticleBase {
+func toArticle(a *ent.Article, current_user_id int) ArticleBase {
 
 	return ArticleBase{
 		Slug:           a.Slug,
@@ -149,17 +160,17 @@ func toArticle(a *ent.Article) ArticleBase {
 		UpdatedAt:      a.UpdatedAt.Format(time.RFC3339),
 		Favorited:      false,
 		FavoritesCount: 0,
-		Author:         toProfile(a.Edges.Owner),
+		Author:         toProfile(a.Edges.Owner, current_user_id),
 	}
 }
 
-func toComment(m *ent.Comment) CommentBase {
+func toComment(m *ent.Comment, current_user_id int) CommentBase {
 
 	return CommentBase{
-		Id:          m.ID,
-		Body:        m.Body,
-		CreatedAt:   m.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:   m.UpdatedAt.Format(time.RFC3339),
-		Author:      toProfile(m.Edges.Owner),
+		Id:        m.ID,
+		Body:      m.Body,
+		CreatedAt: m.CreatedAt.Format(time.RFC3339),
+		UpdatedAt: m.UpdatedAt.Format(time.RFC3339),
+		Author:    toProfile(m.Edges.Owner, current_user_id),
 	}
 }

@@ -87,6 +87,16 @@ func (s *Storage) UpdateUser(user_id int, req UserUpdate) (*ent.User, error) {
 	return t.Save(s.ctx)
 }
 
+func (s *Storage) GetProfile(username string) (*ent.User, error) {
+
+	return s.db.User.Query().
+		WithFollowers().
+		Where(
+			user.UsernameEQ(username),
+		).
+		Only(s.ctx)
+}
+
 func (s *Storage) IsFollowing(follower_id, followee_id int) (bool, error) {
 	return s.db.User.Query().
 		Where(user.ID(follower_id)).
@@ -101,10 +111,82 @@ func (s *Storage) Follow(follower_id, followee_id int) (*ent.User, error) {
 		Save(s.ctx)
 }
 
+func (s *Storage) FollowUser(username string, follower_id int) (*ent.User, error) {
+	tx, err := s.db.Tx(s.ctx)
+	if err != nil {
+		return nil, err
+	}
+	// 查询用户
+	u, err := tx.User.Query().
+		Where(user.UsernameEQ(username)).
+		Only(s.ctx)
+	if err != nil {
+		return nil, err
+	}
+	// 添加关注者
+	err = tx.User.UpdateOne(u).
+		AddFollowerIDs(follower_id).
+		Exec(s.ctx)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	uu, err := tx.User.Query().
+		WithFollowers().
+		Where(user.IDEQ(u.ID)).
+		Only(s.ctx)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return uu, nil
+}
+
 func (s *Storage) Unfollow(follower_id, followee_id int) (*ent.User, error) {
 	return s.db.User.UpdateOneID(follower_id).
 		RemoveFollowingIDs(followee_id).
 		Save(s.ctx)
+}
+
+func (s *Storage) UnFollowUser(username string, follower_id int) (*ent.User, error) {
+	tx, err := s.db.Tx(s.ctx)
+	if err != nil {
+		return nil, err
+	}
+	// 查询用户
+	u, err := tx.User.Query().
+		Where(user.UsernameEQ(username)).
+		Only(s.ctx)
+	if err != nil {
+		return nil, err
+	}
+	// 移除关注者
+	err = tx.User.UpdateOne(u).
+		RemoveFollowerIDs(follower_id).
+		Exec(s.ctx)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	uu, err := tx.User.Query().
+		WithFollowers().
+		Where(user.IDEQ(u.ID)).
+		Only(s.ctx)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return uu, nil
 }
 
 func (s *Storage) GetArticles(query *ArticleQuery) ([]*ent.Article, error) {
@@ -153,7 +235,7 @@ func (s *Storage) GetFeed(user_id int, limit, offset int) ([]*ent.Article, error
 }
 
 func (s *Storage) GetArticleBySlug(slug string) (*ent.Article, error) {
-	
+
 	return s.db.Article.Query().
 		WithOwner().
 		WithTags().
@@ -220,7 +302,7 @@ func (s *Storage) DeleteArticle(slug string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// 查询文章
 	a, err := tx.Article.Query().
 		Where(article.SlugEQ(slug)).
@@ -247,7 +329,7 @@ func (s *Storage) DeleteArticle(slug string) error {
 	}
 	// 提交事务
 	if err := tx.Commit(); err != nil {
-	    return err
+		return err
 	}
 
 	return nil
@@ -284,7 +366,7 @@ func (s *Storage) DeleteComment(id int, slug string, comment_id int) error {
 }
 
 func (s *Storage) IsFavorited(user_id int, slug string) (bool, error) {
-	
+
 	return s.db.Article.Query().
 		Where(article.SlugEQ(slug), article.HasLikedUsersWith(user.ID(user_id))).
 		Exist(s.ctx)
